@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+deepface
+opencv-python
+numpy
+scipy
+pydantic
+tensorflow
+keras
+# Add system-level dependencies as needed (dlib, ffmpeg) on Windows

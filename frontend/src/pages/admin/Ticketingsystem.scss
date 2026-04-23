@@ -1,0 +1,369 @@
+// TicketingSystem.scss
+// Imports your existing AdminDashboard styles first,
+// then adds only the ticket-specific extras.
+
+//@import "../admin/AdminDashboard";   // reuse all admin__* classes
+
+// ── Topbar row (title + button side by side) ─────────────────────────────
+.ts-topbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+// ── Filters bar ───────────────────────────────────────────────────────────
+.ts-filters {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.ts-search {
+  flex: 1;
+  max-width: 300px;
+  border: 1px solid #dde1e7;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #1a1a2e;
+  background: #fff;
+  outline: none;
+
+  &:focus {
+    border-color: #3b82f6;
+  }
+
+  &::placeholder {
+    color: #94a3b8;
+  }
+}
+
+.ts-select {
+  border: 1px solid #dde1e7;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #1a1a2e;
+  background: #fff;
+  outline: none;
+  cursor: pointer;
+
+  &:focus {
+    border-color: #3b82f6;
+  }
+}
+
+// ── Inline status select inside table ─────────────────────────────────────
+.ts-inline-select {
+  border: 1px solid #dde1e7;
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: #334155;
+  background: #f8fafc;
+  cursor: pointer;
+  outline: none;
+}
+
+// ── Primary & ghost buttons ────────────────────────────────────────────────
+.ts-btn-primary {
+  background: #1a1a2e;
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 9px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover {
+    background: #2d2d52;
+  }
+}
+
+.ts-btn-ghost {
+  background: #f1f5f9;
+  color: #475569;
+  border: none;
+  border-radius: 7px;
+  padding: 9px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+
+  &:hover {
+    background: #e2e8f0;
+  }
+}
+
+// ── Overlay + Slide-in Panel ──────────────────────────────────────────────
+.ts-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 200;
+  display: flex;
+  justify-content: flex-end;
+  animation: tsOverlayIn 0.2s ease;
+}
+
+@keyframes tsOverlayIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.ts-panel {
+  width: 100%;
+  max-width: 480px;
+  height: 100%;
+  background: #fff;
+  overflow-y: auto;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  animation: tsPanelIn 0.25s ease;
+}
+
+@keyframes tsPanelIn {
+  from {
+    transform: translateX(40px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+// ── Create Modal (centered) ───────────────────────────────────────────────
+.ts-modal {
+  width: 100%;
+  max-width: 520px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 28px;
+  margin: auto;
+  animation: tsModalIn 0.2s ease;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+@keyframes tsModalIn {
+  from {
+    transform: scale(0.97);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+// ── Panel internals ───────────────────────────────────────────────────────
+.ts-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+
+.ts-panel-id {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #3b82f6;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.ts-panel-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+.ts-close-btn {
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
+.ts-panel-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.ts-pfield-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 3px;
+}
+
+.ts-pfield-val {
+  font-size: 13px;
+  color: #334155;
+  font-weight: 500;
+}
+
+.ts-panel-section {
+  border-top: 1px solid #f1f5f9;
+  padding-top: 16px;
+  margin-top: 8px;
+}
+
+.ts-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+
+.ts-panel-desc {
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.7;
+}
+
+.ts-activity {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #334155;
+}
+
+.ts-activity-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3b82f6;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+
+.ts-textarea {
+  width: 100%;
+  border: 1px solid #dde1e7;
+  border-radius: 7px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #334155;
+  outline: none;
+  resize: vertical;
+
+  &:focus {
+    border-color: #3b82f6;
+  }
+}
+
+// ── Create Ticket Form ────────────────────────────────────────────────────
+.ts-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.ts-form-full {
+  grid-column: 1 / -1;
+}
+
+.ts-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ts-form-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.ts-form-input {
+  border: 1px solid #dde1e7;
+  border-radius: 7px;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #334155;
+  background: #f8fafc;
+  outline: none;
+
+  &:focus {
+    border-color: #3b82f6;
+    background: #fff;
+  }
+}
+
+.ts-modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+// ── Scrollbar ─────────────────────────────────────────────────────────────
+.ts-panel,
+.ts-modal {
+  &::-webkit-scrollbar {
+    width: 5px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: #f1f5f9;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+  }
+}
+
+// ── Active nav highlight (for Tickets item in sidebar) ────────────────────
+.admin__sidebar ul li.active {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+// ── Clickable card (Support Tickets card on dashboard) ────────────────────
+.card--clickable {
+  cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.15s;
+
+  &:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
+    transform: translateY(-2px);
+  }
+
+  p {
+    color: #3b82f6;
+    font-weight: 700;
+  }
+}

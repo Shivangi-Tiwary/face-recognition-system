@@ -1,0 +1,85 @@
+.face-login-container {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #e0f2fe, #f8fafc, #e2e8f0);
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  font-family: "Segoe UI", sans-serif;
+}
+
+.face-login-card {
+  background: white;
+  padding: 50px 60px;
+  border-radius: 28px;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.08);
+
+  text-align: center;
+  width: 750px;
+  max-width: 95vw;
+
+  transition: transform 0.3s ease;
+}
+
+.face-login-card:hover {
+  transform: translateY(-5px);
+}
+
+.face-login-card h2 {
+  font-size: 30px;
+  font-weight: 600;
+  margin-bottom: 35px;
+  color: #1e293b;
+  letter-spacing: 1px;
+}
+
+/* Webcam Styling */
+.face-login-card video {
+  width: 650px;
+  max-width: 90vw;
+  aspect-ratio: 16 / 9;
+
+  border-radius: 24px;
+  border: 6px solid #ffffff;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.15);
+
+  margin-bottom: 35px;
+  transition: transform 0.3s ease;
+}
+
+.face-login-card video:hover {
+  transform: scale(1.02);
+}
+
+/* Button */
+.face-login-card button {
+  padding: 14px 40px;
+  font-size: 16px;
+  font-weight: 500;
+  border-radius: 50px;
+  border: none;
+  cursor: pointer;
+
+  background: linear-gradient(90deg, #3b82f6, #2563eb);
+  color: white;
+
+  box-shadow: 0 12px 30px rgba(59, 130, 246, 0.4);
+
+  transition: all 0.3s ease;
+}
+
+.face-login-card button:hover {
+  transform: translateY(-4px) scale(1.05);
+  box-shadow: 0 18px 40px rgba(59, 130, 246, 0.5);
+}
+
+.face-login-card button:active {
+  transform: scale(0.97);
+}
+
+.face-login-card button:disabled {
+  background: #94a3b8;
+  box-shadow: none;
+  cursor: not-allowed;
+}

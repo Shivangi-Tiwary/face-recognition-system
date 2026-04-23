@@ -1,67 +1,94 @@
-const User = require("../models/User");
-const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const axios = require("axios");
-const { createClient } = require('@supabase/supabase-js');
-const rateLimit = require('express-rate-limit');
-const multer = require('multer');
-const fs = require('fs').promises;
-const { ipKeyGenerator } = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
+const multer = require("multer");
 
-// Initialize Supabase
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_KEY
-);
+// ================= MULTER =================
 
-// Multer for file uploads
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) cb(null, true);
-    else cb(new Error('Only image files are allowed'));
-  }
+    if (file.mimetype.startsWith("image/")) cb(null, true);
+    else cb(new Error("Only image files are allowed"));
+  },
 });
 
-// IPv6-safe rate limiters
+// ================= RATE LIMITERS =================
+
 const registrationLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5,
   message: { error: "Too many registration attempts. Please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.body.email || ipKeyGenerator(req)
+  keyGenerator: (req) => req.body.email || ipKeyGenerator(req),
 });
 
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10,
   message: { error: "Too many login attempts. Please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.body.email || ipKeyGenerator(req)
+  keyGenerator: (req) => req.body.email || ipKeyGenerator(req),
 });
 
 const faceAuthLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: 15 * 60 * 1000, // 15 minutes
   max: 20,
   message: { error: "Too many face authentication attempts. Please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => ipKeyGenerator(req)
+  keyGenerator: (req) => ipKeyGenerator(req),
 });
 
-// Helper: convert buffer → base64
+// ================= HELPERS =================
+
 const bufferToBase64 = (buffer, mimetype) => {
-  const base64 = buffer.toString('base64');
-  return `data:${mimetype};base64,${base64}`;
+  return `data:${mimetype};base64,${buffer.toString("base64")}`;
 };
+
+// ================= AUTH MIDDLEWARE =================
+
+const authenticate = (req, res, next) => {
+  console.log("\n========== AUTH DEBUG ==========");
+  console.log("HEADERS:", req.headers);
+
+  const authHeader = req.headers.authorization;
+
+  console.log("AUTH HEADER:", authHeader);
+
+  if (!authHeader) {
+    console.log("❌ NO AUTH HEADER");
+    return res.status(401).json({ error: "Missing token" });
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  console.log("TOKEN:", token);
+  console.log("JWT SECRET:", process.env.JWT_SECRET);
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    console.log("DECODED:", decoded);
+    console.log("========== AUTH OK ==========\n");
+
+    req.user = decoded;
+    next();
+  } catch (err) {
+    console.log("JWT ERROR:", err.message);
+    console.log("========== AUTH FAILED ==========\n");
+    return res.status(401).json({ error: "Invalid token" });
+  }
+};
+
+// ================= EXPORTS =================
 
 module.exports = {
   upload,
   registrationLimiter,
   loginLimiter,
   faceAuthLimiter,
-  bufferToBase64
+  bufferToBase64,
+  authenticate,
 };

@@ -1,160 +1,171 @@
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const axios = require("axios");
-const { createClient } = require('@supabase/supabase-js');
-const { upload, registrationLimiter, loginLimiter, faceAuthLimiter, bufferToBase64 } = require("../middleware/auth.middleware");
+const { createClient } = require("@supabase/supabase-js");
+const { body, validationResult } = require("express-validator");
 
-// Supabase client
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_KEY
-);
+// Utilities
+const aiService = require("../utils/aiService");
+const { upload, registrationLimiter, loginLimiter, faceAuthLimiter } = require("../middleware/auth.middleware");
+const { sendOtp } = require("../utils/mailer");
+const { generateOtp } = require("../utils/otp");
 
-// Regular registration
-exports.register = [
-  registrationLimiter,
-  async (req, res, next) => {
-    try {
-      const { name, email, password } = req.body;
-      if (!name || !email || !password)
-        return res.status(400).json({ error: "All fields required" });
+// Supabase
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-      const existingUser = await User.findOne({ email });
-      if (existingUser) return res.status(400).json({ error: "Email already registered" });
+// Helper for express-validator results
+const validate = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ success: false, error: errors.array()[0].msg });
+  next();
+};
 
-      const hashed = await bcrypt.hash(password, 10);
-      const user = await User.create({ name, email, password: hashed });
+// MFA Helper
+async function issueMfa(user) {
+  const otp = generateOtp();
+  user.mfaOtp = otp;
+  user.mfaOtpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+  user.mfaVerified = false;
+  await user.save();
+  await sendOtp(user.email, otp);
+  const pendingToken = jwt.sign({ id: user._id, mfaPending: true }, process.env.JWT_SECRET, { expiresIn: "15m" });
+  return { mfaPending: true, pendingToken };
+}
 
-      const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET);
-      res.status(201).json({ success: true, token, user });
-    } catch (err) {
-      next(err);
-    }
-  }
+// 1. REGISTER (Password)
+exports.validateRegister = [
+  body("name").notEmpty().withMessage("Name is required").trim().isLength({ min: 2 }).withMessage("Name must be at least 2 characters"),
+  body("email").isEmail().withMessage("Valid email is required").normalizeEmail(),
+  body("password").isLength({ min: 8 }).withMessage("Password must be at least 8 characters"),
+  validate
 ];
 
-// Login
-exports.login = [
-  loginLimiter,
-  async (req, res, next) => {
-    try {
-      const { email, password } = req.body;
-      const user = await User.findOne({ email });
-      if (!user) return res.status(404).json({ error: "User not found" });
+exports.register = [registrationLimiter, ...exports.validateRegister, async (req, res, next) => {
+  try {
+    const { name, email, password, role, enrollment, department } = req.body;
+    if (await User.findOne({ email })) return res.status(400).json({ error: "Email already exists" });
 
-      const match = await bcrypt.compare(password, user.password);
-      if (!match) return res.status(401).json({ error: "Wrong password" });
+    // Map 'student' to 'user' for database compatibility
+    const dbRole = role === "admin" ? "admin" : "user";
+    
+    const user = await User.create({ 
+      name, 
+      email, 
+      password: await bcrypt.hash(password, 10),
+      role: dbRole,
+      enrollment,
+      department
+    });
 
-      const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET);
-      res.json({ success: true, token, user });
-    } catch (err) {
-      next(err);
-    }
-  }
+    const mfa = await issueMfa(user);
+    res.status(201).json({ success: true, ...mfa });
+  } catch (err) { next(err); }
+}];
+
+// 2. LOGIN (Password)
+exports.validateLogin = [
+  body("email").isEmail().withMessage("Valid email is required"),
+  body("password").notEmpty().withMessage("Password is required"),
+  validate
 ];
 
-// Register with face
-exports.registerWithFace = [
-  registrationLimiter,
-  upload.single("faceImage"),
-  async (req, res, next) => {
-    try {
-      const { name, email, password } = req.body;
-      const imageFile = req.file;
-      if (!name || !email || !password || !imageFile)
-        return res.status(400).json({ error: "All fields and face image required" });
+exports.login = [loginLimiter, ...exports.validateLogin, async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email });
+    if (!user || !(await bcrypt.compare(password, user.password))) return res.status(401).json({ error: "Invalid email or password" });
+    const mfa = await issueMfa(user);
+    res.json({ success: true, ...mfa });
+  } catch (err) { next(err); }
+}];
 
-      const existingUser = await User.findOne({ email });
-      if (existingUser) return res.status(400).json({ error: "Email already registered" });
+// 3. VERIFY OTP
+exports.verifyOtp = async (req, res, next) => {
+  try {
+    const { pendingToken, otp } = req.body;
+    if (!pendingToken || !otp) return res.status(400).json({ error: "pendingToken and otp required" });
+    const payload = jwt.verify(pendingToken, process.env.JWT_SECRET);
+    const user = await User.findById(payload.id);
+    if (!user || user.mfaOtp !== otp.trim() || new Date() > user.mfaOtpExpiry) return res.status(401).json({ error: "Invalid or expired OTP" });
+    user.mfaOtp = undefined; user.mfaOtpExpiry = undefined; user.mfaVerified = true;
+    await user.save();
+    const token = jwt.sign({ id: user._id, role: user.role, name: user.name, email: user.email }, process.env.JWT_SECRET);
+    res.json({ success: true, token, user });
+  } catch (err) { next(err); }
+};
 
-      const hashed = await bcrypt.hash(password, 10);
-      const user = await User.create({ name, email, password: hashed });
+// 4. REGISTER WITH FACE
+exports.registerWithFace = [registrationLimiter, upload.single("faceImage"), ...exports.validateRegister, async (req, res, next) => {
+  let user;
+  try {
+    const { name, email, password, role, enrollment, department } = req.body;
+    if (!req.file) return res.status(400).json({ error: "Face image is required for this registration mode" });
+    if (await User.findOne({ email })) return res.status(400).json({ error: "Email already exists" });
 
-      try {
-        // Convert buffer → base64
-        const base64Image = bufferToBase64(imageFile.buffer, imageFile.mimetype);
+    const embedding = await aiService.extractEmbedding(req.file.buffer, req.file.mimetype);
+    
+    // Map 'student' to 'user' for database compatibility
+    const dbRole = role === "admin" ? "admin" : "user";
 
-        // Send to FastAPI
-        const embeddingResponse = await axios.post("http://localhost:8000/extract-embedding", {
-          image: base64Image,
-          user_id: user._id.toString()
-        });
+    user = await User.create({ 
+      name, 
+      email, 
+      password: await bcrypt.hash(password, 10), 
+      role: dbRole,
+      enrollment,
+      department,
+      faceEmbedding: embedding, 
+      faceEnrolled: true, 
+      enrolledAt: new Date() 
+    });
 
-        const embedding = embeddingResponse.data.embedding;
+    const { error: uploadError } = await supabase.storage.from("faces").upload(`${user._id}.jpg`, req.file.buffer, { contentType: req.file.mimetype, upsert: true });
+    if (uploadError) throw new Error(`Supabase upload error: ${uploadError.message}`);
+    user.faceImageUrl = supabase.storage.from("faces").getPublicUrl(`${user._id}.jpg`).data.publicUrl;
+    await user.save();
+    const mfa = await issueMfa(user);
+    res.status(201).json({ success: true, ...mfa });
+  } catch (err) { if (user?._id) await User.findByIdAndDelete(user._id); next(err); }
+}];
 
-        // Upload image to Supabase
-        const { data, error } = await supabase.storage
-          .from("faces")
-          .upload(`${user._id}.jpg`, imageFile.buffer, { contentType: imageFile.mimetype, upsert: true });
+// 5. LOGIN WITH FACE
+exports.loginWithFace = [faceAuthLimiter, upload.single("faceImage"), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "Face image is required" });
+    const users = await User.find({ faceEnrolled: true });
+    if (!users.length) return res.status(404).json({ error: "No enrolled faces found in the system" });
+    const stored = {}; users.forEach(u => (stored[u._id] = u.faceEmbedding));
+    const match = await aiService.compareFace(req.file.buffer, req.file.mimetype, stored);
+    if (!match?.user_id) return res.status(401).json({ error: "Face not recognized" });
+    const user = await User.findById(match.user_id);
+    user.lastFaceLogin = new Date(); await user.save();
+    const mfa = await issueMfa(user);
+    res.json({ success: true, ...mfa, confidence: match.confidence });
+  } catch (err) { next(err); }
+}];
 
-        if (error) throw error;
+// 6. ENROLL FACE (Protected for existing users)
+exports.enrollFace = [upload.single("faceImage"), async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    if (!req.file) return res.status(400).json({ error: "No image file provided" });
+    const embedding = await aiService.extractEmbedding(req.file.buffer, req.file.mimetype, userId);
+    const { error: uploadError } = await supabase.storage.from("faces").upload(`${userId}.jpg`, req.file.buffer, { contentType: req.file.mimetype, upsert: true });
+    if (uploadError) throw new Error(`Supabase upload error: ${uploadError.message}`);
+    const publicUrl = supabase.storage.from("faces").getPublicUrl(`${userId}.jpg`).data.publicUrl;
+    await User.findByIdAndUpdate(userId, { faceEmbedding: embedding, faceImageUrl: publicUrl, faceEnrolled: true, enrolledAt: new Date() });
+    res.json({ success: true, message: "Face enrolled successfully", faceImageUrl: publicUrl });
+  } catch (err) { next(err); }
+}];
 
-        // Get public URL
-        const { data: { publicUrl } } = supabase.storage.from("faces").getPublicUrl(`${user._id}.jpg`);
-
-        // Save to Mongo
-        user.faceEmbedding = embedding;
-        user.faceImageUrl = publicUrl;
-        user.faceEnrolled = true;
-        user.enrolledAt = new Date();
-        await user.save();
-
-      } catch (faceError) {
-        console.log("FACE PIPELINE FAILED:", faceError.message);
-
-  console.error("Error message:", faceError.message);
-  console.error("Error response:", faceError.response?.data);
-  console.error("Error status:", faceError.response?.status);
-      }
-
-      const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET);
-      res.status(201).json({ success: true, token, user });
-    } catch (err) {
-      next(err);
-    }
-  }
-];
-
-// Login with face
-exports.loginWithFace = [
-  faceAuthLimiter,
-  upload.single("faceImage"),
-  async (req, res, next) => {
-    try {
-      const imageFile = req.file;
-      if (!imageFile) return res.status(400).json({ error: "Face image required" });
-
-      const base64Image = bufferToBase64(imageFile.buffer, imageFile.mimetype);
-
-      // Get enrolled users
-      const enrolledUsers = await User.find({ faceEnrolled: true, faceEmbedding: { $exists: true, $ne: null } });
-
-      if (enrolledUsers.length === 0) return res.status(404).json({ error: "No enrolled faces found" });
-
-      const storedEmbeddings = {};
-      enrolledUsers.forEach(u => storedEmbeddings[u._id.toString()] = u.faceEmbedding);
-
-      // Compare with FastAPI
-      const response = await axios.post("http://localhost:8000/compare-embeddings", {
-        image: base64Image,
-        stored_embeddings: storedEmbeddings
-      });
-
-      const { user_id, confidence } = response.data;
-      const user = await User.findById(user_id);
-      if (!user) return res.status(404).json({ error: "User not found" });
-
-      user.lastFaceLogin = new Date();
-      await user.save();
-
-      const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET);
-      res.json({ success: true, token, user, confidence, message: `Welcome back, ${user.name}!` });
-
-    } catch (err) {
-      if (err.response?.status === 404)
-        return res.status(404).json({ error: "Face not recognized", confidence: 0 });
-      next(err);
-    }
-  }
-];
+exports.resendOtp = async (req, res, next) => {
+  try {
+    const { pendingToken } = req.body;
+    if (!pendingToken) return res.status(400).json({ error: "Missing pendingToken" });
+    const payload = jwt.verify(pendingToken, process.env.JWT_SECRET);
+    const user = await User.findById(payload.id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+    const mfa = await issueMfa(user);
+    res.json({ success: true, ...mfa, message: "New OTP sent to your registered email" });
+  } catch (err) { next(err); }
+};
