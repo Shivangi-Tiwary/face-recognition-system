@@ -15,7 +15,7 @@ ai_install:
   stage: install
   image: python:3.10
   script:
-    - cd ai-service
+    - cd ai_services
     - pip install -r requirements.txt
 
 # ---------------- BUILD ----------------
