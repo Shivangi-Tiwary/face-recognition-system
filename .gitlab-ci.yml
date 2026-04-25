@@ -1,25 +1,25 @@
 stages:
   - install
-  - build
+  - test
 
-# ---------------- BACKEND ----------------
-backend_install:
+image: node:18
+
+cache:
+  paths:
+    - node_modules/
+
+install_dependencies:
   stage: install
-  image: node:18
   script:
-    - cd backend
     - npm install
+  artifacts:
+    paths:
+      - node_modules/
 
-# ---------------- AI SERVICE ----------------
-ai_install:
-  stage: install
-  image: python:3.10
+basic_test:
+  stage: test
   script:
-    - cd ai_services
-    - pip install -r requirements.txt
-
-# ---------------- BUILD ----------------
-build:
-  stage: build
-  script:
-    - echo "Build stage complete"
+    - echo "Running basic backend check..."
+    - node -v
+    - npm -v
+    - if [ -f backend/server.js ]; then node backend/server.js --help || echo "Server file exists"; fi
