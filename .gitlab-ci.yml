@@ -1,0 +1,25 @@
+stages:
+  - install
+  - build
+
+# ---------------- BACKEND ----------------
+backend_install:
+  stage: install
+  image: node:18
+  script:
+    - cd backend
+    - npm install
+
+# ---------------- AI SERVICE ----------------
+ai_install:
+  stage: install
+  image: python:3.10
+  script:
+    - cd ai_services
+    - pip install -r requirements.txt
+
+# ---------------- BUILD ----------------
+build:
+  stage: build
+  script:
+    - echo "Build stage complete"
