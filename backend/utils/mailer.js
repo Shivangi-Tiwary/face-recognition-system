@@ -11,12 +11,18 @@ if (user && pass) {
     auth: { user, pass }
   });
   console.log("📧 Mailer configured: Using Gmail");
+    transporter.verify((err, success) => {
+    if (err) console.error("❌ Transporter verify failed:", err.message);
+    else console.log("✅ Transporter ready");
+  });
+
 } else {
   console.warn("\n⚠️  [WARNING]: GMAIL_USER or GMAIL_APP_PASS missing in .env.");
   console.warn("⚠️  [FALLBACK]: OTPs will be logged to the console instead of sent via email.\n");
 }
 
 exports.sendOtp = async (to, otp) => {
+  console.trace("📍 sendOtp called from:"); 
   if (transporter) {
     try {
       await transporter.sendMail({
