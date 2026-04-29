@@ -6,20 +6,25 @@ import Sidebar from "../components/Sidebar";
 import ChatWindow from "../components/ChatWindow";
 import "../styles/Chat.css";
 
-let socket;
-
 export default function Chat({ embedded = false }) {
   const { token } = useAuth();
   const navigate = useNavigate();
   const [activeRoom, setActiveRoom] = useState(null);
+  const [socket, setSocket] = useState(null);
 
   useEffect(() => {
-    socket = io(import.meta.env.VITE_SOCKET_URL, {
-    auth: { token }
+    const newSocket = io("http://localhost:8080", {
+      auth: { token }
     });
-   socket.on("connect", () => console.log("🟢 Socket connected"));
-    socket.on("connect_error", (err) => console.error("Socket error:", err.message));
-    return () => socket.disconnect();
+    setSocket(newSocket);
+
+    newSocket.on("connect", () => console.log("🟢 Socket connected"));
+    newSocket.on("connect_error", (err) => console.error("Socket error:", err.message));
+
+    return () => {
+      newSocket.disconnect();
+      setSocket(null);
+    };
   }, [token]);
 
   const handleLeaveGroup = (roomId) => {
