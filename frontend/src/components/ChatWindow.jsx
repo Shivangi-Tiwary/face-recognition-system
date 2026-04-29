@@ -17,38 +17,44 @@ export default function ChatWindow({ room, socket, onLeaveGroup }) {
   useEffect(() => {
     if (!room) return;
     fetchMessages();
-    socket?.emit("join_room", room._id);
-    socket?.emit("mark_read", { roomId: room._id });
-  }, [room]);
+    if (socket) {
+      socket.emit("join_room", room._id);
+      socket.emit("mark_read", { roomId: room._id });
+    }
+  }, [room, socket]);
 
   useEffect(() => {
     if (!socket) return;
 
-    socket.on("new_message", (msg) => {
-      setMessages(prev => [...prev, msg]);
-    });
+    const handleNewMessage = (msg) => {
+      console.log("📩 New message received:", msg);
+      if (msg.roomId === room._id) {
+        setMessages(prev => {
+          // Prevent duplicates
+          if (prev.find(m => m._id === msg._id)) return prev;
+          return [...prev, msg];
+        });
+      }
+    };
 
-    socket.on("message_deleted", ({ messageId }) => {
+    const handleMessageDeleted = ({ messageId }) => {
       setMessages(prev =>
         prev.map(m => m._id === messageId ? { ...m, deletedAt: true } : m)
       );
-    });
+    };
 
-    socket.on("user_typing", () => {
-      setTyping("Someone is typing...");
-    });
-
-    socket.on("user_stop_typing", () => {
-      setTyping("");
-    });
+    socket.on("new_message", handleNewMessage);
+    socket.on("message_deleted", handleMessageDeleted);
+    socket.on("user_typing", () => setTyping("Someone is typing..."));
+    socket.on("user_stop_typing", () => setTyping(""));
 
     return () => {
-      socket.off("new_message");
-      socket.off("message_deleted");
+      socket.off("new_message", handleNewMessage);
+      socket.off("message_deleted", handleMessageDeleted);
       socket.off("user_typing");
       socket.off("user_stop_typing");
     };
-  }, [socket]);
+  }, [socket, room?._id]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
