@@ -1,3 +1,5 @@
+
+console.log("RESEND KEY:", process.env.RESEND_API_KEY?.slice(0, 10));
 require("dns").setDefaultResultOrder("ipv4first");
 require("dotenv").config();
 
