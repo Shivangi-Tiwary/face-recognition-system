@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import api from "../api/axios";
 import "../styles/Chat.css";
@@ -10,42 +10,66 @@ export default function ChatWindow({ room, socket, onLeaveGroup }) {
   const [typing, setTyping] = useState("");
   const [file, setFile] = useState(null);
   const [filePreview, setFilePreview] = useState(null);
+  const [sending, setSending] = useState(false);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
   const bottomRef = useRef();
   const typingTimeout = useRef();
   const fileInputRef = useRef();
+  const roomIdRef = useRef(room?._id);
 
   useEffect(() => {
-    if (!room) return;
-    fetchMessages();
+    roomIdRef.current = room?._id;
+  }, [room?._id]);
+
+  // ── Load messages from DB (source of truth) ──────────────────────────────
+  const fetchMessages = useCallback(async (id) => {
+    try {
+      const { data } = await api.get(`/chat/messages/${id}`);
+      setMessages(data.messages ?? []);
+    } catch (err) {
+      console.error("fetchMessages failed:", err);
+    }
+  }, []);
+
+  // ── When room changes: clear + reload ────────────────────────────────────
+  useEffect(() => {
+    if (!room?._id) return;
+    setMessages([]);
+    fetchMessages(room._id);
     if (socket) {
       socket.emit("join_room", room._id);
       socket.emit("mark_read", { roomId: room._id });
     }
-  }, [room, socket]);
+  }, [room?._id, socket, fetchMessages]);
 
+  // ── Socket listeners ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
 
     const handleNewMessage = (msg) => {
-      console.log("📩 New message received:", msg);
-      if (msg.roomId === room._id) {
-        setMessages(prev => {
-          // Prevent duplicates
-          if (prev.find(m => m._id === msg._id)) return prev;
-          return [...prev, msg];
-        });
-      }
+      // roomId on the populated msg may be an object or a string — handle both
+      const msgRoomId = msg.roomId?._id?.toString() || msg.roomId?.toString();
+      const currentRoomId = roomIdRef.current?.toString();
+      if (msgRoomId !== currentRoomId) return;
+
+      setMessages((prev) => {
+        // Deduplicate by _id
+        if (prev.find((m) => m._id?.toString() === msg._id?.toString())) return prev;
+        return [...prev, msg];
+      });
     };
 
     const handleMessageDeleted = ({ messageId }) => {
-      setMessages(prev =>
-        prev.map(m => m._id === messageId ? { ...m, deletedAt: true } : m)
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id?.toString() === messageId?.toString() ? { ...m, deletedAt: new Date() } : m
+        )
       );
     };
 
     socket.on("new_message", handleNewMessage);
     socket.on("message_deleted", handleMessageDeleted);
-    socket.on("user_typing", () => setTyping("Someone is typing..."));
+    socket.on("user_typing", () => setTyping("Someone is typing…"));
     socket.on("user_stop_typing", () => setTyping(""));
 
     return () => {
@@ -54,58 +78,67 @@ export default function ChatWindow({ room, socket, onLeaveGroup }) {
       socket.off("user_typing");
       socket.off("user_stop_typing");
     };
-  }, [socket, room?._id]);
+  }, [socket]);
 
+  // ── Auto scroll to bottom on new messages ────────────────────────────────
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const fetchMessages = async () => {
-    try {
-      const { data } = await api.get(`/chat/messages/${room._id}`);
-      setMessages(data.messages);
-    } catch (err) {}
-  };
-
+  // ── File picker ───────────────────────────────────────────────────────────
   const handleFileChange = (e) => {
     const selected = e.target.files[0];
     if (!selected) return;
     setFile(selected);
-    if (selected.type.startsWith("image/")) {
-      setFilePreview(URL.createObjectURL(selected));
-    } else {
-      setFilePreview(null);
-    }
+    setFilePreview(selected.type.startsWith("image/") ? URL.createObjectURL(selected) : null);
   };
 
+  // ── SEND ──────────────────────────────────────────────────────────────────
+  // Flow:
+  //   1. Emit via socket  →  server saves to DB  →  broadcasts new_message to room
+  //   2. handleNewMessage above picks it up and appends to state for BOTH users
+  //   3. No re-fetch needed — socket echo IS the message
   const sendMessage = async () => {
-    if (!input.trim() && !file) return;
+    if (sending) return;
+    const trimmed = input.trim();
+    if (!trimmed && !file) return;
 
-    if (file) {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("roomId", room._id);
-      try {
+    setSending(true);
+    const currentRoomId = room._id;
+
+    try {
+      if (file) {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("roomId", currentRoomId);
         const { data } = await api.post("/chat/upload", formData, {
-          headers: { "Content-Type": "multipart/form-data" }
+          headers: { "Content-Type": "multipart/form-data" },
         });
-        socket?.emit("send_message", {
-          roomId: room._id,
+        socket.emit("send_message", {
+          roomId: currentRoomId,
           content: data.url,
           type: file.type.startsWith("image/") ? "image" : "file",
-          fileName: file.name
+          fileName: file.name,
         });
-      } catch (err) {}
-      setFile(null);
-      setFilePreview(null);
-      return;
+        setFile(null);
+        setFilePreview(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      } else {
+        setInput(""); // clear immediately for snappiness
+        socket.emit("stop_typing", { roomId: currentRoomId });
+        // Socket handler on backend saves to DB + broadcasts new_message back
+        // to everyone in the room INCLUDING the sender — so it appears for both
+        socket.emit("send_message", { roomId: currentRoomId, content: trimmed });
+      }
+    } catch (err) {
+      console.error("Send failed:", err);
+      if (!file) setInput(trimmed); // restore on error
+    } finally {
+      setSending(false);
     }
-
-    socket?.emit("send_message", { roomId: room._id, content: input });
-    setInput("");
-    socket?.emit("stop_typing", { roomId: room._id });
   };
 
+  // ── Typing indicator ──────────────────────────────────────────────────────
   const handleTyping = (e) => {
     setInput(e.target.value);
     socket?.emit("typing", { roomId: room._id });
@@ -115,118 +148,114 @@ export default function ChatWindow({ room, socket, onLeaveGroup }) {
     }, 1500);
   };
 
+  // ── Delete ────────────────────────────────────────────────────────────────
   const handleDelete = (messageId) => {
     socket?.emit("delete_message", { messageId, roomId: room._id });
   };
 
-const [showLeaveModal, setShowLeaveModal] = useState(false);
-
-const handleLeave = async () => {
-  try {
-    await api.post(`/chat/room/${room._id}/leave`);
-    setShowLeaveModal(false);
-    onLeaveGroup(room._id);
-  } catch (err) {}
-};
+  // ── Leave group ───────────────────────────────────────────────────────────
+  const handleLeave = async () => {
+    try {
+      await api.post(`/chat/room/${room._id}/leave`);
+      setShowLeaveModal(false);
+      onLeaveGroup(room._id);
+    } catch (err) {
+      console.error("Leave failed:", err);
+    }
+  };
 
   const handleKeyDown = (e) => {
-    if (e.key === "Enter") sendMessage();
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
   };
 
   const getRoomName = () => {
     if (room.type === "group") return room.name;
-    const other = room.members?.find(m => m._id !== user?._id);
+    const other = room.members?.find((m) => m._id !== user?._id);
     return other?.name || "Chat";
   };
 
-  const formatTime = (date) => {
-    return new Date(date).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit"
-    });
-  };
+  const getInitial = (name = "") => (name.charAt(0) || "?").toUpperCase();
+
+  const formatTime = (date) =>
+    new Date(date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   if (!room) return null;
 
   return (
-    <div className="chat-window">
-      <div className="chat-header">
-        <div className="avatar">
-          {room.type === "group" ? "👥" : getRoomName().charAt(0)}
+    <div className="cw-root">
+      {/* ── HEADER ── */}
+      <div className="cw-header">
+        <div className="cw-avatar cw-avatar--lg">
+          {room.type === "group" ? "👥" : getInitial(getRoomName())}
         </div>
-        <div>
-          <h3>{getRoomName()}</h3>
-          <p>{room.type === "group" ? `${room.members?.length} members` : "Direct message"}</p>
+        <div className="cw-header-info">
+          <span className="cw-header-name">{getRoomName()}</span>
+          <span className="cw-header-sub">
+            {room.type === "group"
+              ? `${room.members?.length} members`
+              : "Direct message"}
+          </span>
         </div>
-        <div className="chat-header-actions">
-          {room.type === "group" && (
-  <>
-    <button className="leave-btn" onClick={() => setShowLeaveModal(true)}>
-      Leave Group
-    </button>
+        {room.type === "group" && (
+          <button className="cw-leave-btn" onClick={() => setShowLeaveModal(true)}>
+            Leave Group
+          </button>
+        )}
+      </div>
 
-    {showLeaveModal && (
-      <div className="modal-overlay" onClick={() => setShowLeaveModal(false)}>
-        <div className="modal" onClick={e => e.stopPropagation()}>
-          <h3>Leave Group?</h3>
-          <p style={{ fontSize: "14px", color: "#555", marginBottom: "20px" }}>
-            Are you sure you want to leave "{room.name}"?
-          </p>
-          <div className="modal-actions">
-            <button className="btn-cancel" onClick={() => setShowLeaveModal(false)}>
-              Cancel
-            </button>
-            <button
-              onClick={handleLeave}
-              style={{ flex: 1, padding: "10px", borderRadius: "10px", background: "#e53e3e", color: "#fff", border: "none", fontWeight: 600, cursor: "pointer" }}
-            >
-              Leave
-            </button>
+      {/* ── MESSAGES ── */}
+      <div className="cw-messages">
+        {messages.length === 0 && (
+          <div className="cw-empty">
+            <span className="cw-empty-icon">💬</span>
+            <p>No messages yet — say hello!</p>
           </div>
-        </div>
-      </div>
-    )}
-  </>
-)}
-        </div>
-      </div>
+        )}
 
-      <div className="chat-messages">
-        {messages.map(msg => {
-          const isMine = msg.sender?._id === user?._id;
+        {messages.map((msg) => {
+          const isMine = msg.sender?._id?.toString() === user?._id?.toString();
           return (
             <div
               key={msg._id}
-              className={`message-row ${isMine ? "mine" : "theirs"}`}
+              className={`cw-msg-row ${isMine ? "cw-msg-row--mine" : "cw-msg-row--theirs"}`}
             >
-              <div className="avatar" style={{ width: 32, height: 32, fontSize: 13 }}>
-                {msg.sender?.name?.charAt(0)}
-              </div>
-              <div>
+              {!isMine && (
+                <div className="cw-avatar cw-avatar--sm">
+                  {getInitial(msg.sender?.name)}
+                </div>
+              )}
+
+              <div className="cw-msg-col">
                 {!isMine && room.type === "group" && (
-                  <div className="message-sender">{msg.sender?.name}</div>
+                  <span className="cw-sender-name">{msg.sender?.name}</span>
                 )}
-                <div className="message-bubble">
+                <div className={`cw-bubble ${isMine ? "cw-bubble--mine" : "cw-bubble--theirs"}`}>
                   {msg.deletedAt ? (
-                    <span className="deleted-msg">🚫 Message deleted</span>
+                    <span className="cw-deleted">🚫 Message deleted</span>
                   ) : msg.type === "image" ? (
-                    <div className="media-msg">
-                      <img src={msg.content} alt="sent" />
-                    </div>
+                    <img className="cw-media-img" src={msg.content} alt="sent" />
                   ) : msg.type === "file" ? (
-                    <div className="media-msg">
-                      <a href={msg.content} target="_blank" rel="noreferrer">
-                        📎 {msg.fileName || "Download file"}
-                      </a>
-                    </div>
+                    <a className="cw-file-link" href={msg.content} target="_blank" rel="noreferrer">
+                      📎 {msg.fileName || "Download file"}
+                    </a>
                   ) : (
                     msg.content
                   )}
                 </div>
-                <div className="message-meta">{formatTime(msg.createdAt)}</div>
+                <span className={`cw-time ${isMine ? "cw-time--right" : ""}`}>
+                  {formatTime(msg.createdAt)}
+                </span>
               </div>
+
               {isMine && !msg.deletedAt && (
-                <button className="delete-btn" onClick={() => handleDelete(msg._id)}>
+                <button
+                  className="cw-del-btn"
+                  onClick={() => handleDelete(msg._id)}
+                  title="Delete message"
+                >
                   🗑
                 </button>
               )}
@@ -236,36 +265,82 @@ const handleLeave = async () => {
         <div ref={bottomRef} />
       </div>
 
-      {typing && <div className="typing-indicator">{typing}</div>}
+      {/* ── TYPING ── */}
+      {typing && <div className="cw-typing">{typing}</div>}
 
+      {/* ── FILE PREVIEW ── */}
       {file && (
-        <div className="file-preview">
-          {filePreview
-            ? <img src={filePreview} alt="preview" style={{ height: 48, borderRadius: 6 }} />
-            : <span>📎 {file.name}</span>
-          }
-          <button onClick={() => { setFile(null); setFilePreview(null); }}>✕</button>
+        <div className="cw-file-preview">
+          {filePreview ? (
+            <img src={filePreview} alt="preview" className="cw-file-thumb" />
+          ) : (
+            <span>📎 {file.name}</span>
+          )}
+          <button
+            className="cw-file-remove"
+            onClick={() => {
+              setFile(null);
+              setFilePreview(null);
+              if (fileInputRef.current) fileInputRef.current.value = "";
+            }}
+          >
+            ✕
+          </button>
         </div>
       )}
 
-      <div className="chat-input-area">
+      {/* ── INPUT BAR ── */}
+      <div className="cw-input-bar">
         <input
           type="file"
           ref={fileInputRef}
           style={{ display: "none" }}
           onChange={handleFileChange}
         />
-        <button className="file-btn" onClick={() => fileInputRef.current.click()}>
+        <button
+          className="cw-attach-btn"
+          onClick={() => fileInputRef.current?.click()}
+          title="Attach file"
+        >
           📎
         </button>
         <input
-          placeholder="Type a message..."
+          className="cw-text-input"
+          placeholder="Type a message…"
           value={input}
           onChange={handleTyping}
           onKeyDown={handleKeyDown}
+          autoComplete="off"
         />
-        <button className="send-btn" onClick={sendMessage}>Send</button>
+        <button
+          className="cw-send-btn"
+          onClick={sendMessage}
+          disabled={sending || (!input.trim() && !file)}
+        >
+          {sending ? "…" : "Send"}
+        </button>
       </div>
+
+      {/* ── LEAVE MODAL ── */}
+      {showLeaveModal && (
+        <div className="cw-modal-overlay" onClick={() => setShowLeaveModal(false)}>
+          <div className="cw-modal" onClick={(e) => e.stopPropagation()}>
+            <h3 className="cw-modal-title">Leave Group?</h3>
+            <p className="cw-modal-body">
+              Are you sure you want to leave <strong>"{room.name}"</strong>?
+              You won't receive new messages.
+            </p>
+            <div className="cw-modal-actions">
+              <button className="cw-btn-cancel" onClick={() => setShowLeaveModal(false)}>
+                Cancel
+              </button>
+              <button className="cw-btn-leave" onClick={handleLeave}>
+                Leave
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

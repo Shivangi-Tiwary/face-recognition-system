@@ -42,7 +42,7 @@ app.use("/api/auth",      require("./routes/auth.routes"));
 // Protected
 app.use("/api/admin",      protect, require("./routes/admin"));
 app.use("/api/tickets",    protect, require("./routes/ticket.routes"));
-app.use("/api/chatbot",    protect, require("./routes/chatbot.routes"));
+app.use("/api/chatbot",    require("./routes/chatbot.routes"));
 app.use("/api/analytics",  protect, require("./routes/analytics.routes"));
 app.use("/api/attendance", require("./routes/attendance.routes"));
 app.use("/api/dashboard",  protect, require("./routes/dashboard.routes"));
