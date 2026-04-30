@@ -34,8 +34,6 @@ app.get("/", (req, res) => {
 });
 
 // ================= API ROUTES =================
-console.log("GMAIL_USER:", process.env.GMAIL_USER);
-console.log("GMAIL_APP_PASS length:", process.env.GMAIL_APP_PASS?.length);
 // Public
 app.use("/api/auth",      require("./routes/auth.routes"));
 

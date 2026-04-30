@@ -7,22 +7,23 @@ let transporter = null;
 
 if (user && pass) {
   transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: { user, pass }
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    family: 4,
+    auth: { user, pass },
   });
   console.log("📧 Mailer configured: Using Gmail");
-    transporter.verify((err, success) => {
+  transporter.verify((err, success) => {
     if (err) console.error("❌ Transporter verify failed:", err.message);
     else console.log("✅ Transporter ready");
   });
-
 } else {
   console.warn("\n⚠️  [WARNING]: GMAIL_USER or GMAIL_APP_PASS missing in .env.");
   console.warn("⚠️  [FALLBACK]: OTPs will be logged to the console instead of sent via email.\n");
 }
 
 exports.sendOtp = async (to, otp) => {
-  console.trace("📍 sendOtp called from:"); 
   if (transporter) {
     try {
       await transporter.sendMail({
@@ -44,7 +45,6 @@ exports.sendOtp = async (to, otp) => {
       console.log(`🔑 [FALLBACK] OTP for ${to}: ${otp}`);
     }
   } else {
-    // Development fallback
     console.log("-----------------------------------------");
     console.log(`🔑 [DEV-OTP] Verification code for ${to}: ${otp}`);
     console.log("-----------------------------------------");
