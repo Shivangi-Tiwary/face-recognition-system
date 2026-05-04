@@ -1,4 +1,3 @@
-
 console.log("RESEND KEY:", process.env.RESEND_API_KEY?.slice(0, 10));
 require("dns").setDefaultResultOrder("ipv4first");
 require("dotenv").config();
@@ -6,8 +5,6 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const http = require("http");
-const path = require("path");
-const fs = require("fs");
 const { Server } = require("socket.io");
 
 const connectDB = require("./config/db");
@@ -47,7 +44,7 @@ app.use("/api/analytics",  protect, require("./routes/analytics.routes"));
 app.use("/api/attendance", require("./routes/attendance.routes"));
 app.use("/api/dashboard",  protect, require("./routes/dashboard.routes"));
 app.use("/api/chat",       protect, require("./routes/chat.routes"));
-app.use("/api/user",              require("./routes/userDashboard.routes"));
+app.use("/api/user",       require("./routes/userDashboard.routes"));
 
 // Error handler (must be AFTER all routes)
 app.use(errorHandler);
@@ -55,20 +52,7 @@ app.use(errorHandler);
 // Socket.io
 require("./socket/index")(io);
 
-// ================= SERVE REACT BUILD (optional) =================
-
-const clientDist = path.join(__dirname, "..", "face-recognition", "dist");
-
-if (fs.existsSync(clientDist)) {
-  app.use(express.static(clientDist));
-
-  app.get("*", (req, res) => {
-    res.sendFile(path.join(clientDist, "index.html"));
-  });
-}
-
 // ================= SERVER =================
-
 const PORT = process.env.PORT || 5000;
 
 server.listen(PORT, () => {
