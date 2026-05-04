@@ -7,9 +7,14 @@ let transporter = null;
 
 if (user && pass) {
   transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: { user, pass },
-  });
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false,
+  auth: { user, pass },
+  tls: {
+    rejectUnauthorized: false
+  }
+});
   console.log("📧 Mailer configured: Using Gmail");
   transporter.verify((err, success) => {
     if (err) console.error("❌ Transporter verify failed:", err.message);
