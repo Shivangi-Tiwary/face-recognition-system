@@ -7,11 +7,10 @@ let transporter = null;
 
 if (user && pass) {
   transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
+  host:"74.125.130.108", 
   port: 587,
   secure: false,
   auth: { user, pass },
-  family: 4 ,
   tls: {
     rejectUnauthorized: false
   }
