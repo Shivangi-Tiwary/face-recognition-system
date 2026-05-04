@@ -11,6 +11,7 @@ if (user && pass) {
   port: 587,
   secure: false,
   auth: { user, pass },
+  family: 4 ,
   tls: {
     rejectUnauthorized: false
   }
