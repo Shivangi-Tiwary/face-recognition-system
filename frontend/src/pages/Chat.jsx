@@ -15,7 +15,7 @@ export default function Chat({ embedded = false }) {
   useEffect(() => {
     if (!token) return;
 
-    const newSocket = io("http://localhost:5000", {
+    const newSocket = io(import.meta.env.VITE_API_URL.replace("/api", ""), {
       auth: { token },
       // Auto-reconnect settings so if server restarts it reconnects by itself
       reconnection: true,
