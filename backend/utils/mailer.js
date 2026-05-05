@@ -6,14 +6,15 @@ const pass = process.env.GMAIL_APP_PASS;
 let transporter = null;
 
 if (user && pass) {
-  transporter = nodemailer.createTransport({
-  host:"74.125.130.108", 
+transporter = nodemailer.createTransport({
+  host: "smtp-relay.brevo.com",
   port: 587,
   secure: false,
-  auth: { user, pass },
-  tls: {
-    rejectUnauthorized: false
-  }
+  auth: {
+    user: process.env.BREVO_USER,
+    pass: process.env.BREVO_PASS
+  },
+  tls: { rejectUnauthorized: false }
 });
   console.log("📧 Mailer configured: Using Gmail");
   transporter.verify((err, success) => {
